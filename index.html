@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Telemetría Tacómetro</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0b0f14">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --card: #131a23;
+    --card2: #18222e;
+    --line: #243140;
+    --txt: #e8eef5;
+    --mut: #7d8ea0;
+    --acc: #2f9dff;
+    --grn: #00c000;
+    --yel: #ffc800;
+    --red: #f03030;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); color: var(--txt); font-family: system-ui, sans-serif; }
+  body { max-width: 460px; margin: 0 auto; padding: 0 12px 24px; }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 2px 10px;
+  }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: .5px; flex: 1; }
+  #dot { width: 11px; height: 11px; border-radius: 50%; background: #444; box-shadow: 0 0 8px #0008; }
+  #dot.on { background: var(--acc); box-shadow: 0 0 10px var(--acc); }
+  #dot.data { background: var(--grn); box-shadow: 0 0 10px var(--grn); }
+  #btnConectar {
+    border: 1px solid var(--acc); background: transparent; color: var(--acc);
+    padding: 8px 14px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    cursor: pointer;
+  }
+  #btnConectar:disabled { opacity: .4; cursor: wait; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px; margin-top: 12px;
+  }
+  #gaugeWrap { position: relative; text-align: center; }
+  #gauge { width: 100%; height: auto; display: block; }
+  #numDisplay {
+    position: absolute; left: 0; right: 0; bottom: 6%;
+    text-align: center; pointer-events: none;
+  }
+  #numDisplay .big { font-size: 44px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  #numDisplay .lbl { font-size: 11px; color: var(--mut); letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .stat .k { font-size: 10px; color: var(--mut); text-transform: uppercase; letter-spacing: 1.5px; }
+  .stat .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 3px; }
+  .stat.full { grid-column: 1 / -1; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 700;
+  }
+  .badge.ecu1 { background: #0c3a12; color: var(--grn); }
+  .badge.ecu2 { background: #3a320c; color: var(--yel); }
+  .badge.off { background: #333; color: var(--mut); }
+  h2 { font-size: 12px; color: var(--mut); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 10px; }
+  .ctrl { margin-bottom: 14px; }
+  .ctrl:last-child { margin-bottom: 2px; }
+  .ctrl .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ctrl .name { font-size: 13px; }
+  .ctrl .val { font-size: 14px; font-weight: 700; color: var(--acc); min-width: 52px; text-align: right; }
+  .ctrl .hint { font-size: 10px; color: var(--mut); margin-top: 2px; }
+  input[type=range] { width: 100%; accent-color: var(--acc); margin-top: 6px; }
+  .btn {
+    width: 100%; border: none; border-radius: 10px; padding: 11px;
+    font-size: 14px; font-weight: 700; cursor: pointer; margin-top: 6px;
+  }
+  .btn.pri { background: var(--acc); color: #04121f; }
+  .btn.warn { background: var(--red); color: #fff; }
+  .btn:disabled { opacity: .45; }
+  .btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #log {
+    background: #05080c; border: 1px solid var(--line); border-radius: 10px;
+    height: 170px; overflow-y: auto; padding: 8px 10px;
+    font-family: Consolas, monospace; font-size: 11px; line-height: 1.55;
+  }
+  #log .d { color: var(--grn); }
+  #log .ok { color: var(--acc); }
+  #log .cfg { color: var(--yel); }
+  #log .err { color: var(--red); }
+  #log .sys { color: var(--mut); }
+  #sinBle {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px; margin-top: 12px; font-size: 13px; color: var(--mut);
+  }
+  details { margin-top: 12px; }
+  summary { cursor: pointer; color: var(--mut); font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
+  .help { font-size: 12px; color: var(--mut); line-height: 1.6; padding: 8px 0 0; }
+  .help b { color: var(--txt); }
+  .help code { background: #0a0f16; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <div id="dot" title="Desconectado"></div>
+  <h1>TACÓMETRO BLE</h1>
+  <button id="btnConectar">Conectar</button>
+</header>
+
+<div id="gaugeWrap" class="card">
+  <canvas id="gauge"></canvas>
+  <div id="numDisplay">
+    <div class="big" id="numRpm">0</div>
+    <div class="lbl">RPM display</div>
+  </div>
+</div>
+
+<div class="stats">
+  <div class="stat">
+    <div class="k">RPM reales</div>
+    <div class="v" id="stReal">0</div>
+  </div>
+  <div class="stat">
+    <div class="k">Horas motor</div>
+    <div class="v" id="stHoras">00:00</div>
+  </div>
+  <div class="stat full">
+    <div class="k">Estado</div>
+    <div class="v"><span id="stEcu" class="badge off">Sin señal</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Ajustes</h2>
+  <div class="ctrl">
+    <div class="row"><span class="name">Factor reducción display</span><span class="val" id="valF">1.9</span></div>
+    <input type="range" id="inpF" min="0.5" max="10" step="0.1" value="1.9">
+    <div class="hint">Divide las RPM solo en el número del dial (0.1–20)</div>
+    <button class="btn pri" id="btnF">Enviar F</button>
+  </div>
+  <div class="ctrl">
+    <div class="row"><span class="name">Pulsos por vuelta</span><span class="val" id="valP">2.0</span></div>
+    <input type="range" id="inpP" min="1" max="8" step="0.5" value="2">
+    <div class="hint">Pulsos del sensor por cada vuelta (1–8)</div>
+    <button class="btn pri" id="btnP">Enviar P</button>
+  </div>
+  <div class="ctrl">
+    <div class="row"><span class="name">Suavizado de aguja (tau)</span><span class="val" id="valT">0.150</span></div>
+    <input type="range" id="inpT" min="0.01" max="2" step="0.01" value="0.15">
+    <div class="hint">Tiempo de respuesta del filtro en segundos (0.01–2.0)</div>
+    <button class="btn pri" id="btnT">Enviar T</button>
+  </div>
+  <div class="btnrow">
+    <button class="btn pri" id="btnCfg">Consultar (?)</button>
+    <button class="btn warn" id="btnReset">Reset horas (R)</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Prueba de RPM</h2>
+  <div class="ctrl">
+    <div class="row"><span class="name">RPM simuladas</span><span class="val" id="valSim">0</span></div>
+    <input type="range" id="inpSim" min="0" max="6000" step="50" value="0" disabled>
+    <div class="hint">Desliza para subir/bajar RPM de prueba (sin motor). 0 = vuelve al sensor real.</div>
+    <button class="btn pri" id="btnSim">Activar simulación</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Consola</h2>
+  <div id="log"></div>
+</div>
+
+<details>
+  <summary>Cómo usar</summary>
+  <div class="help">
+    <p><b>1.</b> Enciende el tacómetro y pulsa <b>Conectar</b>; elige el dispositivo <code>TACOMETRO</code>.</p>
+    <p><b>2.</b> Los sliders modifican los parámetros; pulsa <b>Enviar</b> para aplicarlos al ESP32 (se guardan en su memoria).</p>
+    <p><b>3.</b> <b>Consultar (?)</b> pide la configuración actual; <b>Reset horas (R)</b> pone el cuenta-horas a 0:00.</p>
+    <p><b>4.</b> La telemetría llega cada 500 ms: <code>D:rpm_real,rpm_display,horas,min,ecu</code>.</p>
+    <p><b>Requisito:</b> Chrome (Android) con BLE activo. Abre este archivo en Chrome o súbelo a cualquier hosting HTTPS. Si aparece "Web Bluetooth no disponible", usa un navegador/sitio con HTTPS.</p>
+  </div>
+</details>
+
+<div id="sinBle" class="hidden">
+  <b>Web Bluetooth no disponible.</b> Necesitas Chrome en Android (o un sitio HTTPS en el navegador) y activar la conexión Bluetooth en el móvil.
+</div>
+
+<script>
+'use strict';
+
+const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+const MAX_RPM = 6000;
+const START_DEG = -220;
+const SWEEP_DEG = 240;
+const ZONAS = [
+  { hasta: 3500, color: '#ffffff' },
+  { hasta: 5000, color: '#00c000' },
+  { hasta: 5400, color: '#ffc800' },
+  { hasta: 6000, color: '#f03030' },
+];
+
+const $ = (id) => document.getElementById(id);
+
+let device = null;
+let txChar = null;
+let rxChar = null;
+let bleBuf = '';
+let conectado = false;
+let lastRpm = 0;
+
+const canvas = $('gauge');
+const ctx = canvas.getContext('2d');
+let gW = 0, gH = 0, gCX = 0, gCY = 0, gR = 0;
+
+function angDeg(rpm) { return START_DEG + (Math.max(0, Math.min(rpm, MAX_RPM)) / MAX_RPM) * SWEEP_DEG; }
+function needleColor(rpm) {
+  const c = ZONAS.find(z => rpm <= z.hasta);
+  return c ? c.color : '#f03030';
+}
+
+function resizeGauge() {
+  const wrap = $('gaugeWrap').clientWidth - 28;
+  gW = Math.min(wrap, 420);
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = gW * dpr;
+  canvas.height = gW * 0.58 * dpr;
+  canvas.style.width = gW + 'px';
+  canvas.style.height = gW * 0.58 + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  gW = canvas.width / dpr;
+  gH = canvas.height / dpr;
+  gCX = gW / 2;
+  gCY = gH - 16;
+  gR = Math.min(gW / 2 - 8, gCY - 8);
+  drawGauge(lastRpm);
+}
+
+function rad(d) { return d * Math.PI / 180; }
+
+function drawGauge(rpm) {
+  ctx.clearRect(0, 0, gW, gH);
+  if (!gR) return;
+
+  // Arco de zonas
+  let prev = START_DEG;
+  for (const z of ZONAS) {
+    const a2 = angDeg(z.hasta);
+    ctx.beginPath();
+    ctx.arc(gCX, gCY, gR, rad(prev), rad(a2), false);
+    ctx.strokeStyle = z.color;
+    ctx.lineWidth = 14;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    prev = a2;
+  }
+
+  // Tick de 1000 RPM
+  for (let k = 0; k <= 6; k++) {
+    const a = angDeg(k * 1000);
+    const c1 = Math.cos(rad(a)), s1 = Math.sin(rad(a));
+    ctx.beginPath();
+    ctx.moveTo(gCX + c1 * (gR - 14), gCY + s1 * (gR - 14));
+    ctx.lineTo(gCX + c1 * (gR - 5), gCY + s1 * (gR - 5));
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    if (k % 2 === 0) {
+      ctx.fillStyle = 'rgba(232,238,245,.8)';
+      ctx.font = '600 11px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText((k * 1000 / 1000) + 'k', gCX + c1 * (gR - 26), gCY + s1 * (gR - 26) + 4);
+    }
+  }
+
+  // Aguja
+  const a = angDeg(rpm);
+  const c = Math.cos(rad(a)), s = Math.sin(rad(a));
+  ctx.beginPath();
+  ctx.moveTo(gCX - c * 10, gCY - s * 10);
+  ctx.lineTo(gCX + c * (gR - 24), gCY + s * (gR - 24));
+  ctx.strokeStyle = '#ff4040';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.shadowColor = 'rgba(255,64,64,.8)';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Cubo central
+  ctx.beginPath();
+  ctx.arc(gCX, gCY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#e8eef5';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(gCX, gCY, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#0b0f14';
+  ctx.fill();
+}
+
+function log(msg, cls) {
+  const el = $('log');
+  const line = document.createElement('div');
+  line.className = cls || 'sys';
+  line.textContent = msg;
+  el.appendChild(line);
+  while (el.children.length > 200) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setDot(state) {
+  $('dot').className = state;
+}
+
+function actualizar(datos) {
+  const [rpmReal, rpmDisplay, hh, mm, ecu] = datos;
+  lastRpm = rpmReal;
+  $('numRpm').textContent = Math.round(rpmDisplay);
+  $('numRpm').style.color = needleColor(rpmReal);
+  $('stReal').textContent = Math.round(rpmReal);
+  $('stHoras').textContent = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+  const badge = $('stEcu');
+  if (ecu === 1) { badge.textContent = 'ECU 2'; badge.className = 'badge ecu2'; }
+  else if (ecu === 0) { badge.textContent = 'ECU 1'; badge.className = 'badge ecu1'; }
+  else { badge.textContent = 'Sin señal'; badge.className = 'badge off'; }
+  drawGauge(rpmReal);
+}
+
+function procesarLinea(line) {
+  const t = line.trim();
+  if (!t) return;
+  if (t.startsWith('D:')) {
+    const p = t.slice(2).split(',');
+    if (p.length >= 5) {
+      const datos = [Number(p[0]), Number(p[1]), Number(p[2]), Number(p[3]), Number(p[4])];
+      actualizar(datos);
+      log(t, 'd');
+    }
+  } else if (t.startsWith('OK:')) {
+    log(t, 'ok');
+  } else if (t.startsWith('CFG:')) {
+    log(t, 'cfg');
+    const m = /F=([\d.]+),P=([\d.]+),T=([\d.]+)/.exec(t);
+    if (m) {
+      $('inpF').value = m[1]; $('valF').textContent = Number(m[1]).toFixed(1);
+      $('inpP').value = m[2]; $('valP').textContent = Number(m[2]).toFixed(1);
+      $('inpT').value = m[3]; $('valT').textContent = Number(m[3]).toFixed(3);
+    }
+    const ms = /S=(-?\d+)/.exec(t);
+    if (ms) {
+      const sv = Number(ms[1]);
+      const v = Math.max(0, sv);
+      $('inpSim').value = v;
+      $('valSim').textContent = v;
+      simActivo = sv > 0;
+      actualizarSimUI();
+    }
+  } else if (t.startsWith('ERR:')) {
+    log(t, 'err');
+  } else {
+    log(t, 'sys');
+  }
+}
+
+function onNotify(evt) {
+  const data = new Uint8Array(evt.target.value.buffer);
+  bleBuf += new TextDecoder().decode(data);
+  let idx;
+  while ((idx = bleBuf.indexOf('\n')) >= 0) {
+    procesarLinea(bleBuf.slice(0, idx));
+    bleBuf = bleBuf.slice(idx + 1);
+  }
+}
+
+async function enviar(cmd) {
+  if (!conectado || !rxChar) { log('No conectado.', 'err'); return; }
+  const payload = cmd + '\n';
+  const bytes = new TextEncoder().encode(payload);
+  try {
+    await rxChar.writeValueWithResponse(bytes);
+    log('>> ' + cmd, 'sys');
+  } catch (e) {
+    try {
+      await rxChar.writeValueWithoutResponse(bytes);
+      log('>> ' + cmd, 'sys');
+    } catch (e2) {
+      log('Error al enviar: ' + e2, 'err');
+    }
+  }
+}
+
+async function conectar() {
+  $('btnConectar').disabled = true;
+  $('btnConectar').textContent = 'Buscando…';
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'TACOMETRO' }, { namePrefix: 'TACOMET' }],
+      optionalServices: [SERVICE_UUID],
+    });
+    device.addEventListener('gattserverdisconnected', desconectar);
+
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    txChar = await service.getCharacteristic(TX_UUID);
+    rxChar = await service.getCharacteristic(RX_UUID);
+
+    await txChar.startNotifications();
+    txChar.addEventListener('characteristicvaluechanged', onNotify);
+
+    conectado = true;
+    setDot('data');
+    log('Conectado: ' + device.name, 'ok');
+    log('Canal de telemetría activo. Pidiendo configuración…', 'sys');
+    enviar('?');
+  } catch (e) {
+    log('Error: ' + (e.message || e), 'err');
+    desconectar();
+  } finally {
+    $('btnConectar').disabled = false;
+    $('btnConectar').textContent = conectado ? 'Desconectar' : 'Conectar';
+  }
+}
+
+function desconectar() {
+  if (device && device.gatt.connected) {
+    try { device.gatt.disconnect(); } catch (e) {}
+  }
+  conectado = false;
+  txChar = null;
+  rxChar = null;
+  device = null;
+  setDot('');
+  $('btnConectar').disabled = false;
+  $('btnConectar').textContent = 'Conectar';
+  log('Desconectado.', 'sys');
+}
+
+// ---- Controles ----
+function bindSlider(id, valId, fmt, fn) {
+  const s = $(id);
+  const v = $(valId);
+  const show = () => { v.textContent = fmt(Number(s.value)); fn(Number(s.value)); };
+  s.addEventListener('input', show);
+}
+
+bindSlider('inpF', 'valF', x => x.toFixed(1), () => {});
+bindSlider('inpP', 'valP', x => x.toFixed(1), () => {});
+bindSlider('inpT', 'valT', x => x.toFixed(3), () => {});
+
+$('btnF').addEventListener('click', () => enviar('F:' + Number($('inpF').value).toFixed(2)));
+$('btnP').addEventListener('click', () => enviar('P:' + Number($('inpP').value).toFixed(1)));
+$('btnT').addEventListener('click', () => enviar('T:' + Number($('inpT').value).toFixed(3)));
+$('btnCfg').addEventListener('click', () => enviar('?'));
+$('btnReset').addEventListener('click', () => {
+  if (confirm('¿Resetear el cuenta-horas a 0:00?')) enviar('R');
+});
+$('btnConectar').addEventListener('click', () => {
+  if (conectado) desconectar();
+  else conectar();
+});
+
+// ---- Simulador de RPM (S:) ----
+let simActivo = false;
+let simTimer = null;
+function actualizarSimUI() {
+  const s = $('inpSim');
+  const b = $('btnSim');
+  s.disabled = !simActivo;
+  b.textContent = simActivo ? 'Desactivar simulación' : 'Activar simulación';
+  b.classList.toggle('pri', !simActivo);
+  b.classList.toggle('warn', simActivo);
+}
+$('btnSim').addEventListener('click', () => {
+  simActivo = !simActivo;
+  if (simActivo) enviar('S:' + Math.round(Number($('inpSim').value)));
+  else enviar('S:0');
+  actualizarSimUI();
+});
+$('inpSim').addEventListener('input', () => {
+  $('valSim').textContent = $('inpSim').value;
+  clearTimeout(simTimer);
+  simTimer = setTimeout(() => {
+    if (simActivo) enviar('S:' + Math.round(Number($('inpSim').value)));
+  }, 120);
+});
+actualizarSimUI();
+
+// ---- Inicio ----
+if (!navigator.bluetooth) {
+  $('sinBle').classList.remove('hidden');
+  $('btnConectar').disabled = true;
+  log('Web Bluetooth no soportado en este navegador.', 'err');
+} else {
+  log('Listo. Pulsa Conectar para vincular el tacómetro.', 'sys');
+}
+
+window.addEventListener('resize', resizeGauge);
+resizeGauge();
+
+// Service worker (para instalación como PWA al servir por HTTPS)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
