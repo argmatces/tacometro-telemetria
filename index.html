@@ -162,6 +162,8 @@
     <input type="range" id="inpSim" min="0" max="6000" step="50" value="0" disabled>
     <div class="hint">Desliza para subir/bajar RPM de prueba (sin motor). 0 = vuelve al sensor real.</div>
     <button class="btn pri" id="btnSim">Activar simulación</button>
+    <button class="btn" id="btnBarrido">Barrido automático</button>
+    <div class="hint">El barrido mueve la aguja sola de 0 a 6000 y vuelve, en bucle. Sirve para ver lo fluida que se mueve sin motor.</div>
   </div>
 </div>
 
@@ -461,21 +463,42 @@ $('btnConectar').addEventListener('click', () => {
   else conectar();
 });
 
-// ---- Simulador de RPM (S:) ----
+// ---- Simulador de RPM (S:) y barrido automático (W:) ----
 let simActivo = false;
+let barridoActivo = false;
 let simTimer = null;
 function actualizarSimUI() {
   const s = $('inpSim');
   const b = $('btnSim');
-  s.disabled = !simActivo;
+  const bw = $('btnBarrido');
+  // Con el barrido prendido manda el barrido, asi que el slider no aplica.
+  s.disabled = barridoActivo || !simActivo;
   b.textContent = simActivo ? 'Desactivar simulación' : 'Activar simulación';
   b.classList.toggle('pri', !simActivo);
   b.classList.toggle('warn', simActivo);
+  bw.textContent = barridoActivo ? 'Detener barrido' : 'Barrido automático';
+  bw.classList.toggle('pri', !barridoActivo);
+  bw.classList.toggle('warn', barridoActivo);
 }
 $('btnSim').addEventListener('click', () => {
   simActivo = !simActivo;
-  if (simActivo) enviar('S:' + Math.round(Number($('inpSim').value)));
-  else enviar('S:0');
+  if (simActivo) {
+    // El slider manda sobre el barrido: es la ultima orden explicita.
+    barridoActivo = false;
+    enviar('W:0');
+    enviar('S:' + Math.round(Number($('inpSim').value)));
+  } else enviar('S:0');
+  actualizarSimUI();
+});
+$('btnBarrido').addEventListener('click', () => {
+  barridoActivo = !barridoActivo;
+  if (barridoActivo) {
+    simActivo = true;
+    enviar('W:6');
+  } else {
+    enviar('W:0');
+    enviar('S:0');
+  }
   actualizarSimUI();
 });
 $('inpSim').addEventListener('input', () => {
