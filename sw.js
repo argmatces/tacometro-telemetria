@@ -12,7 +12,7 @@
 // (arranca sin red) y en paralelo se pide la nueva al servidor, que queda
 // para la próxima apertura. Además el nombre de caché lleva versión, para que
 // al cambiar este archivo se limpien las copias viejas.
-const CACHE = 'tacometro-v3';
+const CACHE = 'tacometro-v4';
 const ASSETS = ['index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', (e) => {

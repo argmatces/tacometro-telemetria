@@ -378,17 +378,28 @@ function onNotify(evt) {
 
 async function enviar(cmd) {
   if (!conectado || !rxChar) { log('No conectado.', 'err'); return; }
-  const payload = cmd + '\n';
-  const bytes = new TextEncoder().encode(payload);
-  try {
-    await rxChar.writeValueWithResponse(bytes);
-    log('>> ' + cmd, 'sys');
-  } catch (e) {
+  const bytes = new TextEncoder().encode(cmd + '\n');
+  // "Write without response" primero: es el camino que mejor se lleva con
+  // NimBLE, porque no depende de que el servidor conteste el ATT. El "with
+  // response" queda como segundo intento. Antes se hacia al reves y, cuando
+  // el primero fallaba, solo se reportaba un error generico de GATT.
+  const intentos = [
+    () => rxChar.writeValueWithoutResponse(bytes),
+    () => rxChar.writeValueWithResponse(bytes),
+  ];
+  for (let i = 0; i < intentos.length; i++) {
     try {
-      await rxChar.writeValueWithoutResponse(bytes);
+      await intentos[i]();
       log('>> ' + cmd, 'sys');
-    } catch (e2) {
-      log('Error al enviar: ' + e2, 'err');
+      return;
+    } catch (e) {
+      // En el ultimo intento se deja el detalle real (nombre + mensaje),
+      // asi no hay que adivinar que fallo.
+      if (i === intentos.length - 1) {
+        const nombre = (e && e.name) ? e.name : 'Error';
+        const detalle = (e && e.message) ? e.message : String(e);
+        log('Error al enviar "' + cmd + '": ' + nombre + ' - ' + detalle, 'err');
+      }
     }
   }
 }
