@@ -160,10 +160,10 @@
   <div class="ctrl">
     <div class="row"><span class="name">RPM simuladas</span><span class="val" id="valSim">0</span></div>
     <input type="range" id="inpSim" min="0" max="6000" step="50" value="0" disabled>
-    <div class="hint">Desliza para subir/bajar RPM de prueba (sin motor). 0 = vuelve al sensor real.</div>
+    <div class="hint">Desliza para subir/bajar RPM de prueba (sin motor). Desactivar la simulación devuelve la lectura al sensor real.</div>
     <button class="btn pri" id="btnSim">Activar simulación</button>
     <button class="btn" id="btnBarrido">Barrido automático</button>
-    <div class="hint">El barrido mueve la aguja sola de 0 a 6000 y vuelve, en bucle. Sirve para ver lo fluida que se mueve sin motor.</div>
+    <div class="hint">El barrido mueve la aguja sola de 0 a 6000 y vuelve, en bucle de 6 s. Si el slider está en 0, activar la simulación arranca en 1500 RPM.</div>
   </div>
 </div>
 
@@ -357,8 +357,13 @@ function procesarLinea(line) {
       $('inpSim').value = v;
       $('valSim').textContent = v;
       simActivo = sv > 0;
-      actualizarSimUI();
     }
+    const mw = /W=(-?\d+)/.exec(t);
+    if (mw) {
+      barridoActivo = Number(mw[1]) > 0;
+      if (barridoActivo) simActivo = true;
+    }
+    actualizarSimUI();
   } else if (t.startsWith('ERR:')) {
     log(t, 'err');
   } else {
@@ -492,19 +497,31 @@ function actualizarSimUI() {
   bw.classList.toggle('warn', barridoActivo);
 }
 $('btnSim').addEventListener('click', () => {
-  simActivo = !simActivo;
   if (simActivo) {
+    simActivo = false;
+    enviar('W:0');
+    enviar('S:0');
+  } else {
+    simActivo = true;
     // El slider manda sobre el barrido: es la ultima orden explicita.
     barridoActivo = false;
+    // S:0 en el ESP32 significa "apagar el simulador", no "0 RPM simuladas".
+    // Asi que si el slider esta en 0 hay que arrancar con un valor visible.
+    let v = Math.round(Number($('inpSim').value));
+    if (v <= 0) {
+      v = 1500;
+      $('inpSim').value = v;
+      $('valSim').textContent = v;
+    }
     enviar('W:0');
-    enviar('S:' + Math.round(Number($('inpSim').value)));
-  } else enviar('S:0');
+    enviar('S:' + v);
+  }
   actualizarSimUI();
 });
 $('btnBarrido').addEventListener('click', () => {
   barridoActivo = !barridoActivo;
+  simActivo = barridoActivo;
   if (barridoActivo) {
-    simActivo = true;
     enviar('W:6');
   } else {
     enviar('W:0');
